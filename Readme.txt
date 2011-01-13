@@ -2,13 +2,8 @@ Current OpenSim Revision: commit 4c1365f1496b2c60c313b6d221362d3e09a8c1d4
 
 Instructions for Building MurmurVoice.dll:
 
-- You need to make a link to 'opensim' which is your opensim source directory
-- You must have already compiled opensim
-
-1. cd src/
-2. nant
-
-That's it, the MurmurVoice.dll will be copied to src/opensim/bin
+- You will need to copy the contents of the 'addon-modules' folder into the 'addon-modules' folder in the Aurora source.
+- Run prebuild and compile, and it will be built.
 
 
 I had to change the ProvisionVoiceAccountRequest and

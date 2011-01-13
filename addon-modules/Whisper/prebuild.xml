@@ -1,0 +1,44 @@
+<?xml version="1.0" ?>
+<Project frameworkVersion="v3_5" name="Aurora.Voice.Whisper" path="addon-modules/Whisper/Modules" type="Library">
+  <Configuration name="Debug">
+    <Options>
+      <OutputPath>../../../bin/</OutputPath>
+    </Options>
+  </Configuration>
+  <Configuration name="Release">
+    <Options>
+      <OutputPath>../../../bin/</OutputPath>
+    </Options>
+  </Configuration>
+
+  <ReferencePath>../../../bin/</ReferencePath>
+  <Reference name="System"/>
+  <Reference name="System.Core"/>
+  <Reference name="System.Data"/>
+  <Reference name="System.Xml"/>
+  <Reference name="System.Drawing"/>
+  <Reference name="System.Windows.Forms"/>
+  <Reference name="System.Data"/>
+  <Reference name="Microsoft.VisualBasic"/>
+
+  <Reference name="Nini" path="../../../bin/"/>
+  <Reference name="OpenMetaverseTypes" path="../../../bin/"/>
+  <Reference name="OpenMetaverse" path="../../../bin/"/>
+  <Reference name="OpenSim.Framework.Servers.HttpServer"/>
+  <Reference name="OpenSim.Framework"/>
+  <Reference name="OpenSim.Region.Framework"/>
+  <Reference name="log4net" path="../../../bin/"/>
+  <Reference name="XMLRPC" path="../../../bin/"/>
+  <Reference name="HttpServer" path="../../../bin/"/>
+  <Reference name="Glacier2" path="../../../bin/"/>
+  <Reference name="Ice" path="../../../bin/"/>
+  <Reference name="Aurora.Framework"/>
+  <Reference name="OpenSim.Services.Interfaces"/>
+  <Reference name="OpenSim.Services.Connectors"/>
+  <Reference name="Aurora.Simulation.Base"/>
+  <Reference name="OpenMetaverse.StructuredData" path="../../bin/"/>
+  <Reference name="OpenSim.Server.Handlers"/>
+  <Files>
+    <Match pattern="*.cs" recurse="true"/>
+  </Files>
+</Project>
