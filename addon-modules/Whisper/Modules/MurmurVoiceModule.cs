@@ -35,7 +35,7 @@ using OpenSim.Framework.Servers.HttpServer;
 using OpenSim.Framework.Capabilities;
 using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.Framework.Scenes;
-using Caps = OpenSim.Framework.Capabilities.Caps;
+using OpenSim.Services.Interfaces;
 using Murmur;
 using Glacier2;
 
@@ -508,7 +508,7 @@ namespace MurmurVoice
             {
                 scene.EventManager.OnNewClient += OnNewClient;
                 scene.EventManager.OnClosingClient += OnClosingClient;
-                scene.EventManager.OnRegisterCaps += delegate(UUID agentID, Caps caps)
+                scene.EventManager.OnRegisterCaps += delegate(UUID agentID, IRegionClientCapsService caps)
                 {
                     OnRegisterCaps(scene, agentID, caps);
                 };
@@ -608,12 +608,12 @@ namespace MurmurVoice
         // Note that OnRegisterCaps is called here via a closure
         // delegate containing the scene of the respective region (see
         // Initialise()).
-        public void OnRegisterCaps(Scene scene, UUID agentID, Caps caps)
+        public void OnRegisterCaps(Scene scene, UUID agentID, IRegionClientCapsService caps)
         {
             m_log.DebugFormat("[MurmurVoice] OnRegisterCaps: agentID {0} caps {1}", agentID, caps);
 
-            string capsBase = "/CAPS/" + caps.CapsObjectPath;
-            caps.RegisterHandler("ProvisionVoiceAccountRequest",
+            string capsBase = "/CAPS/" + UUID.Random();
+            caps.AddStreamHandler("ProvisionVoiceAccountRequest",
                                  new RestStreamHandler("POST", capsBase + m_provisionVoiceAccountRequestPath,
                                                        delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
@@ -621,7 +621,7 @@ namespace MurmurVoice
                                                            return ProvisionVoiceAccountRequest(scene, request, path, param,
                                                                                                agentID, caps);
                                                        }));
-            caps.RegisterHandler("ParcelVoiceInfoRequest",
+            caps.AddStreamHandler("ParcelVoiceInfoRequest",
                                  new RestStreamHandler("POST", capsBase + m_parcelVoiceInfoRequestPath,
                                                        delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
@@ -629,7 +629,7 @@ namespace MurmurVoice
                                                            return ParcelVoiceInfoRequest(scene, request, path, param,
                                                                                          agentID, caps);
                                                        }));
-            caps.RegisterHandler("ChatSessionRequest",
+            caps.AddStreamHandler("ChatSessionRequest",
                                  new RestStreamHandler("POST", capsBase + m_chatSessionRequestPath,
                                                        delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
@@ -640,7 +640,7 @@ namespace MurmurVoice
 
             //For naali
             UUID capID = UUID.Random();
-            caps.RegisterHandler("mumble_server_info", 
+            caps.AddStreamHandler("mumble_server_info", 
                                 new RestStreamHandler("GET", "/CAPS/" + capID,
                                                         delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
@@ -651,7 +651,7 @@ namespace MurmurVoice
 
         /// Callback for a client request for Voice Account Details.
         public string ProvisionVoiceAccountRequest(Scene scene, string request, string path, string param,
-                                                   UUID agentID, Caps caps)
+                                                   UUID agentID, IRegionClientCapsService caps)
         {
             try
             {
@@ -726,7 +726,7 @@ namespace MurmurVoice
                 // settings allow voice, then whether parcel allows
                 // voice, if all do retrieve or obtain the parcel
                 // voice channel
-                LandData land = scene.LandChannel.GetLandObject(avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y).LandData;
+                LandData land = scene.RequestModuleInterface<IParcelManagementModule>().GetLandObject(avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y).LandData;
 
                 m_log.DebugFormat("[MurmurVoice] region \"{0}\": Parcel \"{1}\" ({2}): avatar \"{3}\": request: {4}, path: {5}, param: {6}",
                                   scene.RegionInfo.RegionName, land.Name, land.LocalID, avatar.Name, request, path, param);
@@ -786,7 +786,7 @@ namespace MurmurVoice
 
         /// Callback for a client request for ParcelVoiceInfo
         public string ParcelVoiceInfoRequest(Scene scene, string request, string path, string param,
-                                             UUID agentID, Caps caps)
+                                             UUID agentID, IRegionClientCapsService caps)
         {
             m_log.Debug("[MurmurVoice] Calling ParcelVoiceInfoRequest...");
             try
@@ -795,7 +795,7 @@ namespace MurmurVoice
 
                 string channel_uri = String.Empty;
 
-                if (null == scene.LandChannel)
+                if (null == scene.RequestModuleInterface<IParcelManagementModule>())
                     throw new Exception(String.Format("region \"{0}\": avatar \"{1}\": land data not yet available",
                                                       scene.RegionInfo.RegionName, avatar.Name));
 
@@ -803,7 +803,7 @@ namespace MurmurVoice
                 // settings allow voice, then whether parcel allows
                 // voice, if all do retrieve or obtain the parcel
                 // voice channel
-                LandData land = scene.LandChannel.GetLandObject(avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y).LandData;
+                LandData land = scene.RequestModuleInterface<IParcelManagementModule>().GetLandObject(avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y).LandData;
 
                 m_log.DebugFormat("[MurmurVoice] region \"{0}\": Parcel \"{1}\" ({2}): avatar \"{3}\": request: {4}, path: {5}, param: {6}",
                                   scene.RegionInfo.RegionName, land.Name, land.LocalID, avatar.Name, request, path, param);
@@ -848,7 +848,7 @@ namespace MurmurVoice
 
         /// Callback for a client request for a private chat channel
         public string ChatSessionRequest(Scene scene, string request, string path, string param,
-                                         UUID agentID, Caps caps)
+                                         UUID agentID, IRegionClientCapsService caps)
         {
             ScenePresence avatar = scene.GetScenePresence(agentID);
             string avatarName = avatar.Name;
