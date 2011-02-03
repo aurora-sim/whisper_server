@@ -38,6 +38,7 @@ using OpenSim.Region.Framework.Scenes;
 using OpenSim.Services.Interfaces;
 using Murmur;
 using Glacier2;
+using UserInfo = Murmur.UserInfo;
 
 namespace MurmurVoice
 {
