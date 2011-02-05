@@ -34,7 +34,6 @@
   <Reference name="Ice" path="../../../bin/"/>
   <Reference name="Aurora.Framework"/>
   <Reference name="OpenSim.Services.Interfaces"/>
-  <Reference name="OpenSim.Services.Connectors"/>
   <Reference name="Aurora.Simulation.Base"/>
   <Reference name="OpenMetaverse.StructuredData" path="../../bin/"/>
   <Reference name="OpenSim.Server.Handlers"/>
