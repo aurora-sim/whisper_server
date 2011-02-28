@@ -509,9 +509,9 @@ namespace MurmurVoice
             {
                 scene.EventManager.OnNewClient += OnNewClient;
                 scene.EventManager.OnClosingClient += OnClosingClient;
-                scene.EventManager.OnRegisterCaps += delegate(UUID agentID, IRegionClientCapsService caps)
+                scene.EventManager.OnRegisterCaps += delegate(UUID agentID, IHttpServer server)
                 {
-                    OnRegisterCaps(scene, agentID, caps);
+                    return OnRegisterCaps(scene, agentID, server);
                 };
                 //Add this to the OpenRegionSettings module so we can inform the client about it
                 IOpenRegionSettingsModule ORSM = scene.RequestModuleInterface<IOpenRegionSettingsModule>();
@@ -609,50 +609,51 @@ namespace MurmurVoice
         // Note that OnRegisterCaps is called here via a closure
         // delegate containing the scene of the respective region (see
         // Initialise()).
-        public void OnRegisterCaps(Scene scene, UUID agentID, IRegionClientCapsService caps)
+        public OSDMap OnRegisterCaps(Scene scene, UUID agentID, IHttpServer caps)
         {
             m_log.DebugFormat("[MurmurVoice] OnRegisterCaps: agentID {0} caps {1}", agentID, caps);
 
-            string capsBase = "/CAPS/" + UUID.Random();
-            caps.AddStreamHandler("ProvisionVoiceAccountRequest",
-                                 new RestStreamHandler("POST", capsBase + m_provisionVoiceAccountRequestPath,
+            OSDMap retVal = new OSDMap();
+            retVal["ProvisionVoiceAccountRequest"] = CapsUtil.CreateCAPS("ProvisionVoiceAccountRequest", m_provisionVoiceAccountRequestPath);
+            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ProvisionVoiceAccountRequest"],
                                                        delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
                                                        {
                                                            return ProvisionVoiceAccountRequest(scene, request, path, param,
-                                                                                               agentID, caps);
+                                                                                               agentID);
                                                        }));
-            caps.AddStreamHandler("ParcelVoiceInfoRequest",
-                                 new RestStreamHandler("POST", capsBase + m_parcelVoiceInfoRequestPath,
+            retVal["ParcelVoiceInfoRequest"] = CapsUtil.CreateCAPS("ParcelVoiceInfoRequest", m_parcelVoiceInfoRequestPath);
+            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ParcelVoiceInfoRequest"],
                                                        delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
                                                        {
                                                            return ParcelVoiceInfoRequest(scene, request, path, param,
-                                                                                         agentID, caps);
+                                                                                         agentID);
                                                        }));
-            caps.AddStreamHandler("ChatSessionRequest",
-                                 new RestStreamHandler("POST", capsBase + m_chatSessionRequestPath,
+            retVal["ChatSessionRequest"] = CapsUtil.CreateCAPS("ChatSessionRequest", m_chatSessionRequestPath);
+            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ChatSessionRequest"],
                                                        delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
                                                        {
                                                            return ChatSessionRequest(scene, request, path, param,
-                                                                                     agentID, caps);
+                                                                                     agentID);
                                                        }));
 
             //For naali
-            UUID capID = UUID.Random();
-            caps.AddStreamHandler("mumble_server_info", 
-                                new RestStreamHandler("GET", "/CAPS/" + capID,
+            retVal["mumble_server_info"] = CapsUtil.CreateCAPS("mumble_server_info", m_chatSessionRequestPath);
+            caps.AddStreamHandler(new RestStreamHandler("GET", retVal["mumble_server_info"],
                                                         delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
                                                        {
                                                            return RestGetMumbleServerInfo(scene, request, path, param, httpRequest, httpResponse);
                                                        }));
+
+            return retVal;
         }
 
         /// Callback for a client request for Voice Account Details.
         public string ProvisionVoiceAccountRequest(Scene scene, string request, string path, string param,
-                                                   UUID agentID, IRegionClientCapsService caps)
+                                                   UUID agentID)
         {
             try
             {
@@ -787,7 +788,7 @@ namespace MurmurVoice
 
         /// Callback for a client request for ParcelVoiceInfo
         public string ParcelVoiceInfoRequest(Scene scene, string request, string path, string param,
-                                             UUID agentID, IRegionClientCapsService caps)
+                                             UUID agentID)
         {
             m_log.Debug("[MurmurVoice] Calling ParcelVoiceInfoRequest...");
             try
@@ -849,7 +850,7 @@ namespace MurmurVoice
 
         /// Callback for a client request for a private chat channel
         public string ChatSessionRequest(Scene scene, string request, string path, string param,
-                                         UUID agentID, IRegionClientCapsService caps)
+                                         UUID agentID)
         {
             ScenePresence avatar = scene.GetScenePresence(agentID);
             string avatarName = avatar.Name;
