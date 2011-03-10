@@ -401,18 +401,17 @@ namespace MurmurVoice
             if (m_started)
                 return;
             m_started = true;
+            IConfig voiceconfig = config.Configs["Voice"];
+            if (voiceconfig == null)
+                return;
+            string voiceModule = "MurmurVoice";
+            if (voiceconfig.GetString ("Module", voiceModule) != voiceModule)
+                return;
 
             m_config = config.Configs["MurmurVoice"];
 
             if (null == m_config)
-            {
                 return;
-            }
-
-            if (!m_config.GetBoolean("enabled", false))
-            {
-                return;
-            }
 
             try
             {
