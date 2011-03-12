@@ -1,10 +1,9 @@
-Current OpenSim Revision: commit 4c1365f1496b2c60c313b6d221362d3e09a8c1d4
-
 Instructions for Building MurmurVoice.dll:
 
 - You will need to copy the contents of the 'addon-modules' and 'bin' folders into the 'addon-modules' and 
 'bin' folders respectively in the Aurora source.
 - Run prebuild and compile, and it will be built.
+- In the Configuration/Modules/Voice.ini, select Murmur voice and set the configs up appropriately.
 
 
 I had to change the ProvisionVoiceAccountRequest and
