@@ -721,7 +721,7 @@ namespace MurmurVoice
 
                 string channel_uri;
 
-                ScenePresence avatar = scene.GetScenePresence(avatarId);
+                IScenePresence avatar = scene.GetScenePresence(avatarId);
                 
                 // get channel_uri: check first whether estate
                 // settings allow voice, then whether parcel allows
@@ -792,7 +792,7 @@ namespace MurmurVoice
             m_log.Debug("[MurmurVoice] Calling ParcelVoiceInfoRequest...");
             try
             {
-                ScenePresence avatar = scene.GetScenePresence(agentID);
+                IScenePresence avatar = scene.GetScenePresence(agentID);
 
                 string channel_uri = String.Empty;
 
@@ -851,7 +851,7 @@ namespace MurmurVoice
         public string ChatSessionRequest(Scene scene, string request, string path, string param,
                                          UUID agentID)
         {
-            ScenePresence avatar = scene.GetScenePresence(agentID);
+            IScenePresence avatar = scene.GetScenePresence(agentID);
             string avatarName = avatar.Name;
 
             m_log.DebugFormat("[MurmurVoice] Chat Session: avatar \"{0}\": request: {1}, path: {2}, param: {3}",
