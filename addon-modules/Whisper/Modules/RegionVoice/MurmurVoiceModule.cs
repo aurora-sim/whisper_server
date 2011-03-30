@@ -40,7 +40,7 @@ using Murmur;
 using Glacier2;
 using UserInfo = Murmur.UserInfo;
 
-namespace MurmurVoice
+namespace Aurora.Voice.Whisper
 {
     #region Other classes
 
@@ -391,65 +391,77 @@ namespace MurmurVoice
         private IConfig m_config;
         private static string m_murmurd_host;
         private static int m_murmurd_port;
-        private static ServerManager m_manager;
+        private static Dictionary<UUID, ServerManager> m_managers = new Dictionary<UUID,ServerManager>();
         private static string m_server_version = "";
-        private static bool m_started = false;
         private static bool m_enabled = false;
+
+        private ServerManager GetServerManager(IScene scene)
+        {
+            if (m_managers.ContainsKey(scene.RegionInfo.RegionID))
+                return m_managers[scene.RegionInfo.RegionID];
+            return null;
+        }
+
+        private void AddServerManager(IScene scene, ServerManager manager)
+        {
+            m_managers[scene.RegionInfo.RegionID] = manager;
+        }
 
         public void Initialise(IConfigSource config)
         {
-            if (m_started)
-                return;
-            m_started = true;
             IConfig voiceconfig = config.Configs["Voice"];
             if (voiceconfig == null)
                 return;
             string voiceModule = "MurmurVoice";
             if (voiceconfig.GetString ("Module", voiceModule) != voiceModule)
                 return;
+            m_enabled = true;
+        }
 
-            m_config = config.Configs["MurmurVoice"];
-
-            if (null == m_config)
-                return;
-
+        public void Initialize(IScene scene)
+        {
             try
             {
+                if (!m_enabled)
+                    return;
+                IMurmurService service = scene.RequestModuleInterface<IMurmurService>();
+                if(service == null)
+                    return;
+
+                IMurmurService.MurmurConfig config = service.GetConfiguration(scene.RegionInfo.RegionName);
+                if (config == null)
+                    return;
+
                 // retrieve configuration variables
-                string meta_ice = "Meta:" + m_config.GetString("murmur_ice", String.Empty);
-                m_murmurd_host = m_config.GetString("murmur_host", String.Empty);
-                int server_id = m_config.GetInt("murmur_sid", 1);
-                m_server_version = m_config.GetString("server_version", String.Empty);
+                m_murmurd_host = config.MurmurHost;
+                m_server_version = config.ServerVersion;
 
                 // Admin interface required values
-                if (String.IsNullOrEmpty(meta_ice) ||
-                    String.IsNullOrEmpty(m_murmurd_host))
+                if (String.IsNullOrEmpty(m_murmurd_host))
                 {
                     m_log.Error("[MurmurVoice] plugin disabled: incomplete configuration");
                     return;
                 }
 
                 Ice.Communicator comm = Ice.Util.initialize();
-                
-                bool glacier_enabled = m_config.GetBoolean("glacier", false);
 
                 Glacier2.RouterPrx router = null;
-                if (glacier_enabled)
+                if (config.GlacierEnabled)
                 {
-                    router = RouterPrxHelper.uncheckedCast(comm.stringToProxy(m_config.GetString("glacier_ice", String.Empty)));
+                    router = RouterPrxHelper.uncheckedCast(comm.stringToProxy(config.GlacierIce));
                     comm.setDefaultRouter(router);
-                    router.createSession(m_config.GetString("glacier_user", "admin"), m_config.GetString("glacier_pass", "password"));
+                    router.createSession(config.GlacierUser, config.GlacierPass);
                 }
 
-                MetaPrx meta = MetaPrxHelper.checkedCast(comm.stringToProxy(meta_ice));
+                MetaPrx meta = MetaPrxHelper.checkedCast(comm.stringToProxy(config.MetaIce));
 
                 // Create the adapter
                 comm.getProperties().setProperty("Ice.PrintAdapterReady", "0");
                 Ice.ObjectAdapter adapter;
-                if (glacier_enabled)
+                if (config.GlacierEnabled)
                     adapter = comm.createObjectAdapterWithRouter("Callback.Client", comm.getDefaultRouter());
                 else
-                    adapter = comm.createObjectAdapterWithEndpoints("Callback.Client", m_config.GetString("murmur_ice_cb", "tcp -h 127.0.0.1"));
+                    adapter = comm.createObjectAdapterWithEndpoints("Callback.Client", config.IceCB);
                 adapter.activate();
 
                 // Create identity and callback for Metaserver
@@ -460,11 +472,11 @@ namespace MurmurVoice
                 MetaCallbackPrx meta_callback = MetaCallbackPrxHelper.checkedCast(adapter.add(new MetaCallbackImpl(), metaCallbackIdent));
                 meta.addCallback(meta_callback);
 
-                m_log.InfoFormat("[MurmurVoice] using murmur server ice '{0}'", meta_ice);
+                m_log.InfoFormat("[MurmurVoice] using murmur server ice '{0}'", config.MetaIce);
 
                 // create a server and figure out the port name
                 Dictionary<string, string> defaults = meta.getDefaultConf();
-                ServerPrx server = ServerPrxHelper.checkedCast(meta.getServer(server_id));
+                ServerPrx server = ServerPrxHelper.checkedCast(meta.getServer(config.ServerID));
 
                 // start thread to ping glacier2 router and/or determine if con$
                 m_keepalive = new KeepAlive(server);
@@ -477,13 +489,14 @@ namespace MurmurVoice
                 if (!String.IsNullOrEmpty(conf_port))
                     m_murmurd_port = Convert.ToInt32(conf_port);
                 else
-                    m_murmurd_port = Convert.ToInt32(defaults["port"]) + server_id - 1;
+                    m_murmurd_port = Convert.ToInt32(defaults["port"]) + config.ServerID - 1;
 
                 // starts the server and gets a callback
-                m_manager = new ServerManager(server, m_config.GetString("channel_name", "Channel"));
+                ServerManager m_manager = new ServerManager(server, config.ChannelName);
 
                 // Create identity and callback for this current server
                 m_callback = new ServerCallbackImpl(m_manager);
+                AddServerManager(scene, m_manager);
                 Ice.Identity serverCallbackIdent = new Ice.Identity();
                 serverCallbackIdent.name = "serverCallback";
                 if (router != null)
@@ -491,7 +504,7 @@ namespace MurmurVoice
                 server.addCallback(ServerCallbackPrxHelper.checkedCast(adapter.add(m_callback, serverCallbackIdent)));
 
                 // Show information on console for debugging purposes
-                m_log.InfoFormat("[MurmurVoice] using murmur server '{0}:{1}', sid '{2}'", m_murmurd_host, m_murmurd_port, server_id);
+                m_log.InfoFormat("[MurmurVoice] using murmur server '{0}:{1}', sid '{2}'", m_murmurd_host, m_murmurd_port, config.ServerID);
                 m_log.Info("[MurmurVoice] plugin enabled");
                 m_enabled = true;
             }
@@ -506,6 +519,7 @@ namespace MurmurVoice
         {
             if (m_enabled)
             {
+                Initialize(scene);
                 scene.EventManager.OnNewClient += OnNewClient;
                 scene.EventManager.OnClosingClient += OnClosingClient;
                 scene.EventManager.OnRegisterCaps += delegate(UUID agentID, IHttpServer server)
@@ -533,7 +547,7 @@ namespace MurmurVoice
         {
             if (client.IsLoggingOut)
             {
-                m_manager.Agent.RemoveAgent(client.AgentId);
+                GetServerManager(client.Scene).Agent.RemoveAgent(client.AgentId);
             }
         }
 
@@ -549,8 +563,8 @@ namespace MurmurVoice
             if (m_enabled)
             {
                 m_keepalive.running = false;
-                m_manager.Channel.Close();
-                m_manager.Dispose();
+                GetServerManager(scene).Channel.Close();
+                GetServerManager(scene).Dispose();
             }
         }
 
@@ -660,7 +674,7 @@ namespace MurmurVoice
 
                 if (scene == null) throw new Exception("[MurmurVoice] Invalid scene.");
 
-                Agent agent = m_manager.Agent.GetOrCreate(agentID);
+                Agent agent = GetServerManager(scene).Agent.GetOrCreate(agentID);
 
                 OSDMap response = new OSDMap();
                 response["username"] = agent.name;
@@ -717,7 +731,7 @@ namespace MurmurVoice
             {
                 if (scene == null) throw new Exception("[MurmurVoice] Invalid scene.");
 
-                Agent agent = m_manager.Agent.GetOrCreate(avatarId);
+                Agent agent = GetServerManager(scene).Agent.GetOrCreate(avatarId);
 
                 string channel_uri;
 
@@ -734,14 +748,14 @@ namespace MurmurVoice
 
                 if (((land.Flags & (uint)ParcelFlags.AllowVoiceChat) > 0) && scene.RegionInfo.EstateSettings.AllowVoice)
                 {
-                    agent.channel = m_manager.Channel.GetOrCreate(ChannelName(scene, land));
+                    agent.channel = GetServerManager(scene).Channel.GetOrCreate(ChannelName(scene, land));
 
                     // Host/port pair for voice server
                     channel_uri = String.Format("{0}:{1}", m_murmurd_host, m_murmurd_port);
 
                     if (agent.session > 0)
                     {
-                        Murmur.User state = m_manager.Server.getState(agent.session);
+                        Murmur.User state = GetServerManager(scene).Server.getState(agent.session);
                         m_callback.AddUserToChan(state, agent.channel);
                     }
 
@@ -811,15 +825,15 @@ namespace MurmurVoice
 
                 if (((land.Flags & (uint)ParcelFlags.AllowVoiceChat) > 0) && scene.RegionInfo.EstateSettings.AllowVoice)
                 {
-                    Agent agent = m_manager.Agent.GetOrCreate(agentID);
-                    agent.channel = m_manager.Channel.GetOrCreate(ChannelName(scene, land));
+                    Agent agent = GetServerManager(scene).Agent.GetOrCreate(agentID);
+                    agent.channel = GetServerManager(scene).Channel.GetOrCreate(ChannelName(scene, land));
 
                     // Host/port pair for voice server
                     channel_uri = String.Format("{0}:{1}", m_murmurd_host, m_murmurd_port);
 
                     if (agent.session > 0)
                     {
-                        Murmur.User state = m_manager.Server.getState(agent.session);
+                        Murmur.User state = GetServerManager(scene).Server.getState(agent.session);
                         m_callback.AddUserToChan(state, agent.channel);
                     }
 
