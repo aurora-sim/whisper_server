@@ -145,16 +145,6 @@ namespace Aurora.Voice.Whisper
         {
             m_server = server;
 
-            // Try to start the server
-            try
-            {
-                m_server.start();
-            }
-            catch (Exception)
-            {
-                m_log.DebugFormat("[MurmurVoice]: Server already started.");
-            }
-
             // Create the Agent Manager
             m_agent_manager = new AgentManager(m_server);
 
@@ -195,7 +185,7 @@ namespace Aurora.Voice.Whisper
             acls[0] = new Murmur.ACL(true, true, false, -1, "all",
                 Murmur.PermissionSpeak.value, Murmur.PermissionEnter.value);
 
-            m_log.InfoFormat("[MurmurVoice] Setting ACLs on channel");
+            m_log.DebugFormat("[MurmurVoice] Setting ACLs on channel");
             m_server.setACL(parent_chan, acls, null, true);
         }
 
@@ -205,7 +195,7 @@ namespace Aurora.Voice.Whisper
             {
                 if (chan_ids.ContainsKey(name))
                     return chan_ids[name];
-                m_log.InfoFormat("[MurmurVoice] Channel '{0}' not found. Creating.", name);
+                m_log.DebugFormat("[MurmurVoice] Channel '{0}' not found. Creating.", name);
                 return chan_ids[name] = m_server.addChannel(name, parent_chan);
             }
         }
@@ -324,13 +314,13 @@ namespace Aurora.Voice.Whisper
             foreach (var user in m_server.getRegisteredUsers(agent.name))
                 if (user.Value == agent.name)
                 {
-                    m_log.InfoFormat("[MurmurVoice] Found previously registered user {0}", user.Value);
+                    m_log.DebugFormat("[MurmurVoice] Found previously registered user {0}", user.Value);
                     m_server.unregisterUser(user.Key);
                     //break;
                 }
 
             agent.userid = m_server.registerUser(agent.user_info);
-            m_log.InfoFormat("[MurmurVoice] Registered {0} (uid {1}) identified by {2}", agent.uuid.ToString(), agent.userid, agent.pass);
+            m_log.DebugFormat("[MurmurVoice] Registered {0} (uid {1}) identified by {2}", agent.uuid.ToString(), agent.userid, agent.pass);
 
             lock (name_to_agent)
                 name_to_agent[agent.name] = agent;
@@ -374,9 +364,11 @@ namespace Aurora.Voice.Whisper
     public class MurmurVoiceModule : ISharedRegionModule
     {
         // ICE
-        private ServerCallbackImpl m_callback;
         private static KeepAlive m_keepalive;
+        private static Glacier2.RouterPrx router = null;
+        private static Ice.ObjectAdapter adapter;
         private static Thread m_keepalive_t;
+        private static ServerPrx m_server;
 
         // Infrastructure
         private static readonly ILog m_log =
@@ -388,12 +380,13 @@ namespace Aurora.Voice.Whisper
         private static readonly string m_chatSessionRequestPath = "0109/";
 
         // Configuration
-        private IConfig m_config;
         private static string m_murmurd_host;
         private static int m_murmurd_port;
-        private static Dictionary<UUID, ServerManager> m_managers = new Dictionary<UUID,ServerManager>();
+        private static Dictionary<UUID, ServerManager> m_managers = new Dictionary<UUID, ServerManager>();
+        private static Dictionary<UUID, ServerCallbackImpl> m_servercallbacks = new Dictionary<UUID, ServerCallbackImpl>();
         private static string m_server_version = "";
         private static bool m_enabled = false;
+        private static bool m_started = false; //Have we connected to the Murmur server yet?
 
         private ServerManager GetServerManager(IScene scene)
         {
@@ -405,6 +398,18 @@ namespace Aurora.Voice.Whisper
         private void AddServerManager(IScene scene, ServerManager manager)
         {
             m_managers[scene.RegionInfo.RegionID] = manager;
+        }
+
+        private ServerCallbackImpl GetServerCallback(IScene scene)
+        {
+            if (m_servercallbacks.ContainsKey(scene.RegionInfo.RegionID))
+                return m_servercallbacks[scene.RegionInfo.RegionID];
+            return null;
+        }
+
+        private void AddServerCallback(IScene scene, ServerCallbackImpl serverCallbackImpl)
+        {
+            m_servercallbacks[scene.RegionInfo.RegionID] = serverCallbackImpl;
         }
 
         public void Initialise(IConfigSource config)
@@ -424,84 +429,103 @@ namespace Aurora.Voice.Whisper
             {
                 if (!m_enabled)
                     return;
+
                 IMurmurService service = scene.RequestModuleInterface<IMurmurService>();
-                if(service == null)
+                if (service == null)
                     return;
 
-                IMurmurService.MurmurConfig config = service.GetConfiguration(scene.RegionInfo.RegionName);
+                MurmurConfig config = service.GetConfiguration(scene.RegionInfo.RegionName);
                 if (config == null)
                     return;
 
-                // retrieve configuration variables
-                m_murmurd_host = config.MurmurHost;
-                m_server_version = config.ServerVersion;
-
-                // Admin interface required values
-                if (String.IsNullOrEmpty(m_murmurd_host))
+                bool justStarted = false;
+                if (!m_started)
                 {
-                    m_log.Error("[MurmurVoice] plugin disabled: incomplete configuration");
-                    return;
+                    justStarted = true;
+                    m_started = true;
+
+                    // retrieve configuration variables
+                    m_murmurd_host = config.MurmurHost;
+                    m_server_version = config.ServerVersion;
+
+                    // Admin interface required values
+                    if (String.IsNullOrEmpty(m_murmurd_host))
+                    {
+                        m_log.Error("[MurmurVoice] plugin disabled: incomplete configuration");
+                        return;
+                    }
+
+                    Ice.Communicator comm = Ice.Util.initialize();
+
+                    if (config.GlacierEnabled)
+                    {
+                        router = RouterPrxHelper.uncheckedCast(comm.stringToProxy(config.GlacierIce));
+                        comm.setDefaultRouter(router);
+                        router.createSession(config.GlacierUser, config.GlacierPass);
+                    }
+
+                    MetaPrx meta = MetaPrxHelper.checkedCast(comm.stringToProxy(config.MetaIce));
+
+                    // Create the adapter
+                    comm.getProperties().setProperty("Ice.PrintAdapterReady", "0");
+                    if (config.GlacierEnabled)
+                        adapter = comm.createObjectAdapterWithRouter("Callback.Client", comm.getDefaultRouter());
+                    else
+                        adapter = comm.createObjectAdapterWithEndpoints("Callback.Client", config.IceCB);
+                    adapter.activate();
+
+                    // Create identity and callback for Metaserver
+                    Ice.Identity metaCallbackIdent = new Ice.Identity();
+                    metaCallbackIdent.name = "metaCallback";
+                    if (router != null)
+                        metaCallbackIdent.category = router.getCategoryForClient();
+                    MetaCallbackPrx meta_callback = MetaCallbackPrxHelper.checkedCast(adapter.add(new MetaCallbackImpl(), metaCallbackIdent));
+                    meta.addCallback(meta_callback);
+
+                    m_log.InfoFormat("[MurmurVoice] using murmur server ice '{0}'", config.MetaIce);
+
+                    // create a server and figure out the port name
+                    Dictionary<string, string> defaults = meta.getDefaultConf();
+                    m_server = ServerPrxHelper.checkedCast(meta.getServer(config.ServerID));
+
+                    // start thread to ping glacier2 router and/or determine if con$
+                    m_keepalive = new KeepAlive(m_server);
+                    ThreadStart ka_d = new ThreadStart(m_keepalive.StartPinging);
+                    m_keepalive_t = new Thread(ka_d);
+                    m_keepalive_t.Start();
+
+                    // first check the conf for a port, if not then use server id and default port to find the right one.
+                    string conf_port = m_server.getConf("port");
+                    if (!String.IsNullOrEmpty(conf_port))
+                        m_murmurd_port = Convert.ToInt32(conf_port);
+                    else
+                        m_murmurd_port = Convert.ToInt32(defaults["port"]) + config.ServerID - 1;
+
+                    try
+                    {
+                        m_server.start();
+                    }
+                    catch
+                    {
+                    }
                 }
-
-                Ice.Communicator comm = Ice.Util.initialize();
-
-                Glacier2.RouterPrx router = null;
-                if (config.GlacierEnabled)
-                {
-                    router = RouterPrxHelper.uncheckedCast(comm.stringToProxy(config.GlacierIce));
-                    comm.setDefaultRouter(router);
-                    router.createSession(config.GlacierUser, config.GlacierPass);
-                }
-
-                MetaPrx meta = MetaPrxHelper.checkedCast(comm.stringToProxy(config.MetaIce));
-
-                // Create the adapter
-                comm.getProperties().setProperty("Ice.PrintAdapterReady", "0");
-                Ice.ObjectAdapter adapter;
-                if (config.GlacierEnabled)
-                    adapter = comm.createObjectAdapterWithRouter("Callback.Client", comm.getDefaultRouter());
-                else
-                    adapter = comm.createObjectAdapterWithEndpoints("Callback.Client", config.IceCB);
-                adapter.activate();
-
-                // Create identity and callback for Metaserver
-                Ice.Identity metaCallbackIdent = new Ice.Identity();
-                metaCallbackIdent.name = "metaCallback";
-                if (router != null)
-                    metaCallbackIdent.category = router.getCategoryForClient();
-                MetaCallbackPrx meta_callback = MetaCallbackPrxHelper.checkedCast(adapter.add(new MetaCallbackImpl(), metaCallbackIdent));
-                meta.addCallback(meta_callback);
-
-                m_log.InfoFormat("[MurmurVoice] using murmur server ice '{0}'", config.MetaIce);
-
-                // create a server and figure out the port name
-                Dictionary<string, string> defaults = meta.getDefaultConf();
-                ServerPrx server = ServerPrxHelper.checkedCast(meta.getServer(config.ServerID));
-
-                // start thread to ping glacier2 router and/or determine if con$
-                m_keepalive = new KeepAlive(server);
-                ThreadStart ka_d = new ThreadStart(m_keepalive.StartPinging);
-                m_keepalive_t = new Thread(ka_d);
-                m_keepalive_t.Start();
-
-                // first check the conf for a port, if not then use server id and default port to find the right one.
-                string conf_port = server.getConf("port");
-                if (!String.IsNullOrEmpty(conf_port))
-                    m_murmurd_port = Convert.ToInt32(conf_port);
-                else
-                    m_murmurd_port = Convert.ToInt32(defaults["port"]) + config.ServerID - 1;
 
                 // starts the server and gets a callback
-                ServerManager m_manager = new ServerManager(server, config.ChannelName);
+                ServerManager manager = new ServerManager(m_server, config.ChannelName);
 
                 // Create identity and callback for this current server
-                m_callback = new ServerCallbackImpl(m_manager);
-                AddServerManager(scene, m_manager);
-                Ice.Identity serverCallbackIdent = new Ice.Identity();
-                serverCallbackIdent.name = "serverCallback";
-                if (router != null)
-                    serverCallbackIdent.category = router.getCategoryForClient();
-                server.addCallback(ServerCallbackPrxHelper.checkedCast(adapter.add(m_callback, serverCallbackIdent)));
+                AddServerCallback(scene, new ServerCallbackImpl(manager));
+                AddServerManager(scene, manager);
+
+                if (justStarted)
+                {
+                    Ice.Identity serverCallbackIdent = new Ice.Identity();
+                    serverCallbackIdent.name = "serverCallback";
+                    if (router != null)
+                        serverCallbackIdent.category = router.getCategoryForClient();
+
+                    m_server.addCallback(ServerCallbackPrxHelper.checkedCast(adapter.add(GetServerCallback(scene), serverCallbackIdent)));
+                }
 
                 // Show information on console for debugging purposes
                 m_log.InfoFormat("[MurmurVoice] using murmur server '{0}:{1}', sid '{2}'", m_murmurd_host, m_murmurd_port, config.ServerID);
@@ -565,6 +589,7 @@ namespace Aurora.Voice.Whisper
                 m_keepalive.running = false;
                 GetServerManager(scene).Channel.Close();
                 GetServerManager(scene).Dispose();
+                m_server.stop();
             }
         }
 
@@ -602,7 +627,7 @@ namespace Aurora.Voice.Whisper
             {
                 m_log.DebugFormat("[MurmurVoice] Region:Parcel \"{0}:{1}\": parcel id {2}",
                                   scene.RegionInfo.RegionName, scene.RegionInfo.RegionName, land.LocalID);
-                return scene.RegionInfo.RegionID.ToString().Replace("-", "");
+                return scene.RegionInfo.RegionName;
             }
         }
 
@@ -670,7 +695,7 @@ namespace Aurora.Voice.Whisper
         {
             try
             {
-                m_log.Info("[MurmurVoice] Calling ProvisionVoiceAccountRequest...");
+                m_log.Debug("[MurmurVoice] Calling ProvisionVoiceAccountRequest...");
 
                 if (scene == null) throw new Exception("[MurmurVoice] Invalid scene.");
 
@@ -683,7 +708,7 @@ namespace Aurora.Voice.Whisper
                 response["voice_account_server_name"] = String.Format("tcp://{0}:{1}", m_murmurd_host, m_murmurd_port);
 
                 string r = OSDParser.SerializeLLSDXmlString(response);
-                m_log.InfoFormat("[MurmurVoice] VoiceAccount: {0}", r);
+                m_log.DebugFormat("[MurmurVoice] VoiceAccount: {0}", r);
                 return r;
             }
             catch (Exception e)
@@ -756,7 +781,7 @@ namespace Aurora.Voice.Whisper
                     if (agent.session > 0)
                     {
                         Murmur.User state = GetServerManager(scene).Server.getState(agent.session);
-                        m_callback.AddUserToChan(state, agent.channel);
+                        GetServerCallback(scene).AddUserToChan(state, agent.channel);
                     }
 
                     m_log.InfoFormat("[MurmurVoice] {0}", channel_uri);
@@ -834,10 +859,10 @@ namespace Aurora.Voice.Whisper
                     if (agent.session > 0)
                     {
                         Murmur.User state = GetServerManager(scene).Server.getState(agent.session);
-                        m_callback.AddUserToChan(state, agent.channel);
+                        GetServerCallback(scene).AddUserToChan(state, agent.channel);
                     }
 
-                    m_log.InfoFormat("[MurmurVoice] {0}", channel_uri);
+                    m_log.DebugFormat("[MurmurVoice] {0}", channel_uri);
                 }
                 else
                 {
@@ -850,7 +875,7 @@ namespace Aurora.Voice.Whisper
                 response["voice_credentials"] = new OSDMap();
                 ((OSDMap)response["voice_credentials"])["channel_uri"] = channel_uri;
                 string r = OSDParser.SerializeLLSDXmlString(response);
-                m_log.InfoFormat("[MurmurVoice] Parcel: {0}", r);
+                m_log.DebugFormat("[MurmurVoice] Parcel: {0}", r);
 
                 return r;
             }

@@ -30,9 +30,9 @@ namespace Aurora.Voice.Whisper
         {
         }
 
-        public IMurmurService.MurmurConfig GetConfiguration(string regionName)
+        public MurmurConfig GetConfiguration(string regionName)
         {
-            IMurmurService.MurmurConfig config = new IMurmurService.MurmurConfig();
+            MurmurConfig config = new MurmurConfig();
 
             // retrieve configuration variables
             config.MetaIce = "Meta:" + m_config.GetString("murmur_ice", String.Empty);
