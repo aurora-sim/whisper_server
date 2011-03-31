@@ -369,6 +369,7 @@ namespace Aurora.Voice.Whisper
         private static Ice.ObjectAdapter adapter;
         private static Thread m_keepalive_t;
         private static ServerPrx m_server;
+        private IConfigSource m_source;
 
         // Infrastructure
         private static readonly ILog m_log =
@@ -414,6 +415,7 @@ namespace Aurora.Voice.Whisper
 
         public void Initialise(IConfigSource config)
         {
+            m_source = config;
             IConfig voiceconfig = config.Configs["Voice"];
             if (voiceconfig == null)
                 return;
@@ -447,6 +449,10 @@ namespace Aurora.Voice.Whisper
                     // retrieve configuration variables
                     m_murmurd_host = config.MurmurHost;
                     m_server_version = config.ServerVersion;
+                    //Fix the callback URL, its our IP, so we deal with it
+                    IConfig m_config = m_source.Configs["MurmurService"];
+                    if (m_config != null)
+                        config.IceCB = m_config.GetString("murmur_ice_cb", "tcp -h 127.0.0.1");
 
                     // Admin interface required values
                     if (String.IsNullOrEmpty(m_murmurd_host))

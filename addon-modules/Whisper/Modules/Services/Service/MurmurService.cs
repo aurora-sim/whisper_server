@@ -19,7 +19,11 @@ namespace Aurora.Voice.Whisper
         {
             m_config = config.Configs["MurmurService"];
             if (m_config != null)
-                registry.RegisterModuleInterface<IMurmurService>(this);
+            {
+                bool enabled = m_config.GetString("MurmurService") == GetType().Name;
+                if(enabled)
+                    registry.RegisterModuleInterface<IMurmurService>(this);
+            }
         }
 
         public void Start(IConfigSource config, IRegistryCore registry)
