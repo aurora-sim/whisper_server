@@ -46,7 +46,7 @@ namespace Aurora.Voice.Whisper
             {
                 OSDMap request = new OSDMap();
                 request["RegionName"] = regionName;
-                OSDMap response = WebUtils.PostToService(url, request);
+                OSDMap response = WebUtils.PostToService (url, request, true, true);
                 OSDMap resp = (OSDMap)response["_Result"];
                 if (resp.Type == OSDType.Unknown) //Make sure we got back a good response
                     return null;

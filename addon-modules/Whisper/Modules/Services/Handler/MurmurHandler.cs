@@ -36,7 +36,7 @@ namespace Aurora.Voice.Whisper
         public void Start(IConfigSource config, IRegistryCore registry)
         {
             IConfig handlerConfig = config.Configs["MurmurService"];
-            if (handlerConfig.GetString("MurmurHandler", "") != Name)
+            if (handlerConfig == null || handlerConfig.GetString("MurmurHandler", "") != Name)
                 return;
 
             m_registry = registry;

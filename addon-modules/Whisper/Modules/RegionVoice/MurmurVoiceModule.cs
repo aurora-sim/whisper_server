@@ -577,7 +577,9 @@ namespace Aurora.Voice.Whisper
         {
             if (client.IsLoggingOut)
             {
-                GetServerManager(client.Scene).Agent.RemoveAgent(client.AgentId);
+                ServerManager manager = GetServerManager (client.Scene);
+                if(manager != null)
+                    manager.Agent.RemoveAgent (client.AgentId);
             }
         }
 
