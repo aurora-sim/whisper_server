@@ -22,7 +22,6 @@ namespace Aurora.Voice.Whisper
         #region IService Members
 
         private IRegistryCore m_registry;
-        private uint m_port = 0;
 
         public string Name
         {
@@ -40,18 +39,7 @@ namespace Aurora.Voice.Whisper
                 return;
 
             m_registry = registry;
-            m_port = handlerConfig.GetUInt("MurmurInHandlerPort");
 
-            if (handlerConfig.GetBoolean("UnsecureUrls", false))
-            {
-                string url = "/MURMUR";
-
-                IHttpServer server = registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(m_port);
-                m_port = server.Port;
-
-                server.AddStreamHandler(new MurmurPoster(url, registry.RequestModuleInterface<IMurmurService>(),
-                0, m_registry));
-            }
             m_registry.RequestModuleInterface<IGridRegistrationService>().RegisterModule(this);
         }
 
@@ -68,30 +56,29 @@ namespace Aurora.Voice.Whisper
             get { return "MurmurServiceURI"; }
         }
 
-        public uint Port
+        public void AddExistingUrlForClient (string SessionID, ulong RegionHandle, string url, uint port)
         {
-            get { return m_port; }
-        }
-
-        public void AddExistingUrlForClient(string SessionID, ulong RegionHandle, string url)
-        {
-            IHttpServer server = m_registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(m_port);
-            m_port = server.Port;
+            IHttpServer server = m_registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(port);
 
             server.AddStreamHandler(new MurmurPoster(url, m_registry.RequestModuleInterface<IMurmurService>(),
                     RegionHandle, m_registry));
         }
 
-        public string GetUrlForRegisteringClient(string SessionID, ulong RegionHandle)
+        public string GetUrlForRegisteringClient (string SessionID, ulong RegionHandle, uint port)
         {
             string url = "/MURMUR" + UUID.Random();
 
-            IHttpServer server = m_registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(m_port);
-            m_port = server.Port;
+            IHttpServer server = m_registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(port);
 
             server.AddStreamHandler(new MurmurPoster(url, m_registry.RequestModuleInterface<IMurmurService>(),
                     RegionHandle, m_registry));
             return url;
+        }
+
+        public void RemoveUrlForClient (ulong regionHandle, string sessionID, string url, uint port)
+        {
+            IHttpServer server = m_registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(port);
+            server.RemoveHTTPHandler("POST", url);
         }
 
         #endregion
