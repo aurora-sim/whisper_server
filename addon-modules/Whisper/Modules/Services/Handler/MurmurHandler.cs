@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -56,26 +56,26 @@ namespace Aurora.Voice.Whisper
             get { return "MurmurServiceURI"; }
         }
 
-        public void AddExistingUrlForClient (string SessionID, ulong RegionHandle, string url, uint port)
+        public void AddExistingUrlForClient (string SessionID, string url, uint port)
         {
             IHttpServer server = m_registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(port);
 
             server.AddStreamHandler(new MurmurPoster(url, m_registry.RequestModuleInterface<IMurmurService>(),
-                    RegionHandle, m_registry));
+                    SessionID, m_registry));
         }
 
-        public string GetUrlForRegisteringClient (string SessionID, ulong RegionHandle, uint port)
+        public string GetUrlForRegisteringClient (string SessionID, uint port)
         {
             string url = "/MURMUR" + UUID.Random();
 
             IHttpServer server = m_registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(port);
 
             server.AddStreamHandler(new MurmurPoster(url, m_registry.RequestModuleInterface<IMurmurService>(),
-                    RegionHandle, m_registry));
+                    SessionID, m_registry));
             return url;
         }
 
-        public void RemoveUrlForClient (ulong regionHandle, string sessionID, string url, uint port)
+        public void RemoveUrlForClient (string sessionID, string url, uint port)
         {
             IHttpServer server = m_registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(port);
             server.RemoveHTTPHandler("POST", url);
@@ -89,14 +89,14 @@ namespace Aurora.Voice.Whisper
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         private IMurmurService m_service;
-        private ulong m_ourRegionHandle;
+        private string m_SessionID;
         protected IRegistryCore m_registry;
 
-        public MurmurPoster(string url, IMurmurService handler, ulong handle, IRegistryCore registry) :
+        public MurmurPoster (string url, IMurmurService handler, string SessionID, IRegistryCore registry) :
             base("POST", url)
         {
             m_service = handler;
-            m_ourRegionHandle = handle;
+            m_SessionID = SessionID;
             m_registry = registry;
         }
 
@@ -111,7 +111,7 @@ namespace Aurora.Voice.Whisper
             IGridRegistrationService urlModule =
                             m_registry.RequestModuleInterface<IGridRegistrationService>();
             if (urlModule != null)
-                if (!urlModule.CheckThreatLevel("", m_ourRegionHandle, "Murmur_Get", ThreatLevel.None))
+                if (!urlModule.CheckThreatLevel (m_SessionID, "Murmur_Get", ThreatLevel.None))
                     return new byte[0];
 
             OSDMap request = WebUtils.GetOSDMap(body);
