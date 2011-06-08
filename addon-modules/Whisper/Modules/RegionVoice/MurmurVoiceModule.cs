@@ -301,7 +301,13 @@ namespace Aurora.Voice.Whisper
             if (user != null)
             {
                 m_log.InfoFormat("[MurmurVoice] Removing registered user {0}", user.name);
-                m_server.unregisterUser(user.userid);
+                try
+                {
+                    m_server.unregisterUser (user.userid);
+                }
+                catch
+                {
+                }
                 lock (name_to_agent)
                     name_to_agent.Remove(user.name);
             }
@@ -577,9 +583,13 @@ namespace Aurora.Voice.Whisper
         {
             if (client.IsLoggingOut)
             {
-                ServerManager manager = GetServerManager (client.Scene);
-                if(manager != null)
-                    manager.Agent.RemoveAgent (client.AgentId);
+                IScenePresence sp = client.Scene.GetScenePresence (client.AgentId);
+                if (sp != null && !sp.IsChildAgent)
+                {
+                    ServerManager manager = GetServerManager (client.Scene);
+                    if (manager != null)
+                        manager.Agent.RemoveAgent (client.AgentId);
+                }
             }
         }
 
