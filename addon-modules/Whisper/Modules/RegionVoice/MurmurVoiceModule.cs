@@ -357,6 +357,7 @@ namespace Aurora.Voice.Whisper
 
         public void StartPinging()
         {
+            Culture.SetCurrentCulture ();
             if (running)
             {
                 m_server.ice_ping();
@@ -551,7 +552,7 @@ namespace Aurora.Voice.Whisper
             }
         }
 
-        public void AddRegion(Scene scene)
+        public void AddRegion (IScene scene)
         {
             if (m_enabled)
             {
@@ -594,13 +595,13 @@ namespace Aurora.Voice.Whisper
         }
 
         // Called to indicate that all loadable modules have now been added
-        public void RegionLoaded(Scene scene)
+        public void RegionLoaded (IScene scene)
         {
             // Do nothing.
         }
 
         // Called to indicate that the region is going away.
-        public void RemoveRegion(Scene scene)
+        public void RemoveRegion (IScene scene)
         {
             if (m_enabled)
             {
@@ -631,7 +632,7 @@ namespace Aurora.Voice.Whisper
             get { return "MurmurVoiceModule"; }
         }
 
-        private string ChannelName(Scene scene, LandData land)
+        private string ChannelName (IScene scene, LandData land)
         {
             // Create parcel voice channel. If no parcel exists, then the voice channel ID is the same
             // as the directory ID. Otherwise, it reflects the parcel's ID.
@@ -665,7 +666,7 @@ namespace Aurora.Voice.Whisper
         // Note that OnRegisterCaps is called here via a closure
         // delegate containing the scene of the respective region (see
         // Initialise()).
-        public OSDMap OnRegisterCaps(Scene scene, UUID agentID, IHttpServer caps)
+        public OSDMap OnRegisterCaps (IScene scene, UUID agentID, IHttpServer caps)
         {
             m_log.DebugFormat("[MurmurVoice] OnRegisterCaps: agentID {0} caps {1}", agentID, caps);
 
@@ -686,14 +687,14 @@ namespace Aurora.Voice.Whisper
                                                            return ParcelVoiceInfoRequest(scene, request, path, param,
                                                                                          agentID);
                                                        }));
-            retVal["ChatSessionRequest"] = CapsUtil.CreateCAPS("ChatSessionRequest", m_chatSessionRequestPath);
+            /*retVal["ChatSessionRequest"] = CapsUtil.CreateCAPS("ChatSessionRequest", m_chatSessionRequestPath);
             caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ChatSessionRequest"],
                                                        delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
                                                        {
                                                            return ChatSessionRequest(scene, request, path, param,
                                                                                      agentID);
-                                                       }));
+                                                       }));*/
 
             //For naali
             retVal["mumble_server_info"] = CapsUtil.CreateCAPS("mumble_server_info", m_chatSessionRequestPath);
@@ -708,7 +709,7 @@ namespace Aurora.Voice.Whisper
         }
 
         /// Callback for a client request for Voice Account Details.
-        public string ProvisionVoiceAccountRequest(Scene scene, string request, string path, string param,
+        public string ProvisionVoiceAccountRequest (IScene scene, string request, string path, string param,
                                                    UUID agentID)
         {
             try
@@ -745,7 +746,7 @@ namespace Aurora.Voice.Whisper
         /// <param name="httpRequest">HTTP request header object</param>
         /// <param name="httpResponse">HTTP response header object</param>
         /// <returns>Information about the mumble server in http response headers</returns>
-        public string RestGetMumbleServerInfo(Scene scene, string request, string path, string param,
+        public string RestGetMumbleServerInfo (IScene scene, string request, string path, string param,
                                        OSHttpRequest httpRequest, OSHttpResponse httpResponse)
         {
             if (m_murmurd_host == null)
@@ -843,7 +844,7 @@ namespace Aurora.Voice.Whisper
         }
 
         /// Callback for a client request for ParcelVoiceInfo
-        public string ParcelVoiceInfoRequest(Scene scene, string request, string path, string param,
+        public string ParcelVoiceInfoRequest (IScene scene, string request, string path, string param,
                                              UUID agentID)
         {
             m_log.Debug("[MurmurVoice] Calling ParcelVoiceInfoRequest...");
@@ -905,7 +906,7 @@ namespace Aurora.Voice.Whisper
         }
 
         /// Callback for a client request for a private chat channel
-        public string ChatSessionRequest(Scene scene, string request, string path, string param,
+        public string ChatSessionRequest (IScene scene, string request, string path, string param,
                                          UUID agentID)
         {
             IScenePresence avatar = scene.GetScenePresence(agentID);
