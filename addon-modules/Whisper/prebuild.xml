@@ -53,7 +53,7 @@
   <Reference name="Ice" path="../../../bin/"/>
   <Reference name="Aurora.Framework"/>
   <Reference name="Aurora.Simulation.Base"/>
-  <Reference name="OpenMetaverse.StructuredData" path="../../bin/"/>
+  <Reference name="OpenMetaverse.StructuredData" path="../../../bin/"/>
   <Files>
     <Match pattern="*.cs" recurse="true"/>
   </Files>
