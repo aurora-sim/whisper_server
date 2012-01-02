@@ -26,16 +26,14 @@ using System.Collections;
 using System.Threading;
 using System.Collections.Generic;
 using System.Reflection;
+using Aurora.Framework;
+using Aurora.Framework.Capabilities;
+using Aurora.Framework.Servers.HttpServer;
 using log4net;
 using Nini.Config;
 using OpenMetaverse;
 using OpenMetaverse.StructuredData;
-using OpenSim.Framework;
-using OpenSim.Framework.Servers.HttpServer;
-using OpenSim.Framework.Capabilities;
 using OpenSim.Region.Framework.Interfaces;
-using OpenSim.Region.Framework.Scenes;
-using OpenSim.Services.Interfaces;
 using Murmur;
 using Glacier2;
 using UserInfo = Murmur.UserInfo;
@@ -383,15 +381,15 @@ namespace Aurora.Voice.Whisper
             LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         // Capability strings
-        private static readonly string m_parcelVoiceInfoRequestPath = "0107/";
-        private static readonly string m_provisionVoiceAccountRequestPath = "0108/";
-        private static readonly string m_chatSessionRequestPath = "0109/";
+        private const string m_parcelVoiceInfoRequestPath = "0107/";
+        private const string m_provisionVoiceAccountRequestPath = "0108/";
+        private const string m_chatSessionRequestPath = "0109/";
 
         // Configuration
         private static string m_murmurd_host;
         private static int m_murmurd_port;
-        private static Dictionary<UUID, ServerManager> m_managers = new Dictionary<UUID, ServerManager>();
-        private static Dictionary<UUID, ServerCallbackImpl> m_servercallbacks = new Dictionary<UUID, ServerCallbackImpl>();
+        private static readonly Dictionary<UUID, ServerManager> m_managers = new Dictionary<UUID, ServerManager>();
+        private static readonly Dictionary<UUID, ServerCallbackImpl> m_servercallbacks = new Dictionary<UUID, ServerCallbackImpl>();
         private static string m_server_version = "";
         private static bool m_enabled = false;
         private static bool m_started = false; //Have we connected to the Murmur server yet?
@@ -426,7 +424,7 @@ namespace Aurora.Voice.Whisper
             IConfig voiceconfig = config.Configs["Voice"];
             if (voiceconfig == null)
                 return;
-            string voiceModule = "MurmurVoice";
+            const string voiceModule = "MurmurVoice";
             if (voiceconfig.GetString ("Module", voiceModule) != voiceModule)
                 return;
             m_enabled = true;
@@ -481,15 +479,13 @@ namespace Aurora.Voice.Whisper
 
                     // Create the adapter
                     comm.getProperties().setProperty("Ice.PrintAdapterReady", "0");
-                    if (config.GlacierEnabled)
-                        adapter = comm.createObjectAdapterWithRouter("Callback.Client", comm.getDefaultRouter());
-                    else
-                        adapter = comm.createObjectAdapterWithEndpoints("Callback.Client", config.IceCB);
+                    adapter = config.GlacierEnabled
+                                  ? comm.createObjectAdapterWithRouter("Callback.Client", comm.getDefaultRouter())
+                                  : comm.createObjectAdapterWithEndpoints("Callback.Client", config.IceCB);
                     adapter.activate();
 
                     // Create identity and callback for Metaserver
-                    Ice.Identity metaCallbackIdent = new Ice.Identity();
-                    metaCallbackIdent.name = "metaCallback";
+                    Ice.Identity metaCallbackIdent = new Ice.Identity {name = "metaCallback"};
                     if (router != null)
                         metaCallbackIdent.category = router.getCategoryForClient();
                     MetaCallbackPrx meta_callback = MetaCallbackPrxHelper.checkedCast(adapter.add(new MetaCallbackImpl(), metaCallbackIdent));
@@ -532,8 +528,7 @@ namespace Aurora.Voice.Whisper
 
                 if (justStarted)
                 {
-                    Ice.Identity serverCallbackIdent = new Ice.Identity();
-                    serverCallbackIdent.name = "serverCallback";
+                    Ice.Identity serverCallbackIdent = new Ice.Identity {name = "serverCallback"};
                     if (router != null)
                         serverCallbackIdent.category = router.getCategoryForClient();
 
@@ -547,7 +542,7 @@ namespace Aurora.Voice.Whisper
             }
             catch (Exception e)
             {
-                m_log.ErrorFormat("[MurmurVoice] plugin initialization failed: {0}", e.ToString());
+                m_log.ErrorFormat("[MurmurVoice] plugin initialization failed: {0}", e);
                 return;
             }
         }
@@ -559,10 +554,14 @@ namespace Aurora.Voice.Whisper
                 Initialize(scene);
                 scene.EventManager.OnNewClient += OnNewClient;
                 scene.EventManager.OnClosingClient += OnClosingClient;
+#if (!ISWIN)
                 scene.EventManager.OnRegisterCaps += delegate(UUID agentID, IHttpServer server)
                 {
                     return OnRegisterCaps(scene, agentID, server);
                 };
+#else
+                scene.EventManager.OnRegisterCaps += (agentID, server) => OnRegisterCaps(scene, agentID, server);
+#endif
                 //Add this to the OpenRegionSettings module so we can inform the client about it
                 IOpenRegionSettingsModule ORSM = scene.RequestModuleInterface<IOpenRegionSettingsModule>();
                 if (ORSM != null)
@@ -642,12 +641,9 @@ namespace Aurora.Voice.Whisper
                                   scene.RegionInfo.RegionName, land.Name, land.LocalID);
                 return land.GlobalID.ToString().Replace("-", "");
             }
-            else
-            {
-                m_log.DebugFormat("[MurmurVoice] Region:Parcel \"{0}:{1}\": parcel id {2}",
-                                  scene.RegionInfo.RegionName, scene.RegionInfo.RegionName, land.LocalID);
-                return scene.RegionInfo.RegionName;
-            }
+            m_log.DebugFormat("[MurmurVoice] Region:Parcel \"{0}:{1}\": parcel id {2}",
+                              scene.RegionInfo.RegionName, scene.RegionInfo.RegionName, land.LocalID);
+            return scene.RegionInfo.RegionName;
         }
 
         // OnRegisterCaps is invoked via the scene.EventManager
@@ -672,6 +668,7 @@ namespace Aurora.Voice.Whisper
 
             OSDMap retVal = new OSDMap();
             retVal["ProvisionVoiceAccountRequest"] = CapsUtil.CreateCAPS("ProvisionVoiceAccountRequest", m_provisionVoiceAccountRequestPath);
+#if (!ISWIN)
             caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ProvisionVoiceAccountRequest"],
                                                        delegate(string request, string path, string param,
                                                                 OSHttpRequest httpRequest, OSHttpResponse httpResponse)
@@ -687,6 +684,30 @@ namespace Aurora.Voice.Whisper
                                                            return ParcelVoiceInfoRequest(scene, request, path, param,
                                                                                          agentID);
                                                        }));
+            retVal["mumble_server_info"] = CapsUtil.CreateCAPS("mumble_server_info", m_chatSessionRequestPath);
+            caps.AddStreamHandler(new RestStreamHandler("GET", retVal["mumble_server_info"],
+                                                        delegate(string request, string path, string param,
+                                                                OSHttpRequest httpRequest, OSHttpResponse httpResponse)
+                                                       {
+                                                           return RestGetMumbleServerInfo(scene, request, path, param, httpRequest, httpResponse);
+                                                       }));
+#else
+            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ProvisionVoiceAccountRequest"],
+                                                        (request, path, param, httpRequest, httpResponse) =>
+                                                        ProvisionVoiceAccountRequest(scene, request, path, param,
+                                                                                     agentID)));
+            retVal["ParcelVoiceInfoRequest"] = CapsUtil.CreateCAPS("ParcelVoiceInfoRequest", m_parcelVoiceInfoRequestPath);
+            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ParcelVoiceInfoRequest"],
+                                                        (request, path, param, httpRequest, httpResponse) =>
+                                                        ParcelVoiceInfoRequest(scene, request, path, param,
+                                                                               agentID)));
+            retVal["mumble_server_info"] = CapsUtil.CreateCAPS("mumble_server_info", m_chatSessionRequestPath);
+            caps.AddStreamHandler(new RestStreamHandler("GET", retVal["mumble_server_info"],
+                                                        (request, path, param, httpRequest, httpResponse) =>
+                                                        RestGetMumbleServerInfo(scene, request, path, param, httpRequest,
+                                                                                httpResponse)));
+#endif
+            
             /*retVal["ChatSessionRequest"] = CapsUtil.CreateCAPS("ChatSessionRequest", m_chatSessionRequestPath);
             caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ChatSessionRequest"],
                                                        delegate(string request, string path, string param,
@@ -697,13 +718,7 @@ namespace Aurora.Voice.Whisper
                                                        }));*/
 
             //For naali
-            retVal["mumble_server_info"] = CapsUtil.CreateCAPS("mumble_server_info", m_chatSessionRequestPath);
-            caps.AddStreamHandler(new RestStreamHandler("GET", retVal["mumble_server_info"],
-                                                        delegate(string request, string path, string param,
-                                                                OSHttpRequest httpRequest, OSHttpResponse httpResponse)
-                                                       {
-                                                           return RestGetMumbleServerInfo(scene, request, path, param, httpRequest, httpResponse);
-                                                       }));
+
 
             return retVal;
         }
@@ -732,7 +747,7 @@ namespace Aurora.Voice.Whisper
             }
             catch (Exception e)
             {
-                m_log.DebugFormat("[MurmurVoice] {0} failed", e.ToString());
+                m_log.DebugFormat("[MurmurVoice] {0} failed", e);
                 return "<llsd><undef /></llsd>";
             }
         }
@@ -740,6 +755,7 @@ namespace Aurora.Voice.Whisper
         /// <summary>
         /// Returns information about a mumble server via a REST Request
         /// </summary>
+        /// <param name="scene"></param>
         /// <param name="request"></param>
         /// <param name="path"></param>
         /// <param name="param">A string representing the sim's UUID</param>
@@ -767,80 +783,85 @@ namespace Aurora.Voice.Whisper
                 m_log.Warn(message);
                 return "avatar_uuid header is missing";
             }
-                
-            string avatar_uuid = httpRequest.Headers.GetValues("avatar_uuid")[0];
-            string responseBody = String.Empty;
-            UUID avatarId;
-            if (UUID.TryParse(avatar_uuid, out avatarId))
+
+            string[] strings = httpRequest.Headers.GetValues("avatar_uuid");
+            if (strings != null)
             {
-                if (scene == null) throw new Exception("[MurmurVoice] Invalid scene.");
-
-                Agent agent = GetServerManager(scene).Agent.GetOrCreate(avatarId);
-
-                string channel_uri;
-
-                IScenePresence avatar = scene.GetScenePresence(avatarId);
-                
-                // get channel_uri: check first whether estate
-                // settings allow voice, then whether parcel allows
-                // voice, if all do retrieve or obtain the parcel
-                // voice channel
-                LandData land = scene.RequestModuleInterface<IParcelManagementModule>().GetLandObject(avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y).LandData;
-
-                m_log.DebugFormat("[MurmurVoice] region \"{0}\": Parcel \"{1}\" ({2}): avatar \"{3}\": request: {4}, path: {5}, param: {6}",
-                                  scene.RegionInfo.RegionName, land.Name, land.LocalID, avatar.Name, request, path, param);
-
-                if (((land.Flags & (uint)ParcelFlags.AllowVoiceChat) > 0) && scene.RegionInfo.EstateSettings.AllowVoice)
+                string avatar_uuid = strings[0];
+                string responseBody = String.Empty;
+                UUID avatarId;
+                if (UUID.TryParse(avatar_uuid, out avatarId))
                 {
-                    agent.channel = GetServerManager(scene).Channel.GetOrCreate(ChannelName(scene, land));
+                    if (scene == null) throw new Exception("[MurmurVoice] Invalid scene.");
 
-                    // Host/port pair for voice server
-                    channel_uri = String.Format("{0}:{1}", m_murmurd_host, m_murmurd_port);
+                    Agent agent = GetServerManager(scene).Agent.GetOrCreate(avatarId);
 
-                    if (agent.session > 0)
+                    string channel_uri;
+
+                    IScenePresence avatar = scene.GetScenePresence(avatarId);
+                
+                    // get channel_uri: check first whether estate
+                    // settings allow voice, then whether parcel allows
+                    // voice, if all do retrieve or obtain the parcel
+                    // voice channel
+                    LandData land = scene.RequestModuleInterface<IParcelManagementModule>().GetLandObject(avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y).LandData;
+
+                    m_log.DebugFormat("[MurmurVoice] region \"{0}\": Parcel \"{1}\" ({2}): avatar \"{3}\": request: {4}, path: {5}, param: {6}",
+                                      scene.RegionInfo.RegionName, land.Name, land.LocalID, avatar.Name, request, path, param);
+
+                    if (((land.Flags & (uint)ParcelFlags.AllowVoiceChat) > 0) && scene.RegionInfo.EstateSettings.AllowVoice)
                     {
-                        Murmur.User state = GetServerManager(scene).Server.getState(agent.session);
-                        GetServerCallback(scene).AddUserToChan(state, agent.channel);
-                    }
+                        agent.channel = GetServerManager(scene).Channel.GetOrCreate(ChannelName(scene, land));
 
-                    m_log.InfoFormat("[MurmurVoice] {0}", channel_uri);
+                        // Host/port pair for voice server
+                        channel_uri = String.Format("{0}:{1}", m_murmurd_host, m_murmurd_port);
+
+                        if (agent.session > 0)
+                        {
+                            User state = GetServerManager(scene).Server.getState(agent.session);
+                            GetServerCallback(scene).AddUserToChan(state, agent.channel);
+                        }
+
+                        m_log.InfoFormat("[MurmurVoice] {0}", channel_uri);
+                    }
+                    else
+                    {
+                        m_log.DebugFormat("[MurmurVoice] Voice not enabled.");
+                        channel_uri = "";
+                    }
+                    const string m_context = "Mumble voice system";
+
+                    httpResponse.AddHeader("Mumble-Server", m_murmurd_host);
+                    httpResponse.AddHeader("Mumble-Version", m_server_version);
+                    httpResponse.AddHeader("Mumble-Channel", channel_uri);
+                    httpResponse.AddHeader("Mumble-User", avatar_uuid);
+                    httpResponse.AddHeader("Mumble-Password", agent.pass);
+                    httpResponse.AddHeader("Mumble-Avatar-Id", avatar_uuid);
+                    httpResponse.AddHeader("Mumble-Context-Id", m_context);
+
+                    responseBody += "Mumble-Server: " + m_murmurd_host + "\n";
+                    responseBody += "Mumble-Version: " + m_server_version + "\n";
+                    responseBody += "Mumble-Channel: " + channel_uri + "\n";
+                    responseBody += "Mumble-User: " + avatar_uuid + "\n";
+                    responseBody += "Mumble-Password: " + agent.pass + "\n";
+                    responseBody += "Mumble-Avatar-Id: " + avatar_uuid + "\n";
+                    responseBody += "Mumble-Context-Id: " + m_context + "\n";
+
+                    string log_message = "[MUMBLE VOIP]: Server info request handled for " + httpRequest.RemoteIPEndPoint.Address + "";
+                    m_log.Info(log_message);
                 }
                 else
                 {
-                    m_log.DebugFormat("[MurmurVoice] Voice not enabled.");
-                    channel_uri = "";
+                    httpResponse.StatusCode = 400;
+                    httpResponse.StatusDescription = "Bad Request";
+
+                    m_log.Warn("[MUMBLE VOIP]: Could not parse avatar uuid from request");
+                    return "could not parse avatar_uuid header";
                 }
-                string m_context = "Mumble voice system";
 
-                httpResponse.AddHeader("Mumble-Server", m_murmurd_host);
-                httpResponse.AddHeader("Mumble-Version", m_server_version);
-                httpResponse.AddHeader("Mumble-Channel", channel_uri);
-                httpResponse.AddHeader("Mumble-User", avatar_uuid);
-                httpResponse.AddHeader("Mumble-Password", agent.pass);
-                httpResponse.AddHeader("Mumble-Avatar-Id", avatar_uuid);
-                httpResponse.AddHeader("Mumble-Context-Id", m_context);
-
-                responseBody += "Mumble-Server: " + m_murmurd_host + "\n";
-                responseBody += "Mumble-Version: " + m_server_version + "\n";
-                responseBody += "Mumble-Channel: " + channel_uri + "\n";
-                responseBody += "Mumble-User: " + avatar_uuid + "\n";
-                responseBody += "Mumble-Password: " + agent.pass + "\n";
-                responseBody += "Mumble-Avatar-Id: " + avatar_uuid + "\n";
-                responseBody += "Mumble-Context-Id: " + m_context + "\n";
-
-                string log_message = "[MUMBLE VOIP]: Server info request handled for " + httpRequest.RemoteIPEndPoint.Address + "";
-                m_log.Info(log_message);
+                return responseBody;
             }
-            else
-            {
-                httpResponse.StatusCode = 400;
-                httpResponse.StatusDescription = "Bad Request";
-
-                m_log.Warn("[MUMBLE VOIP]: Could not parse avatar uuid from request");
-                return "could not parse avatar_uuid header";
-            }
-
-            return responseBody;
+            return "Mumble server info is not available.";
         }
 
         /// Callback for a client request for ParcelVoiceInfo
@@ -877,7 +898,7 @@ namespace Aurora.Voice.Whisper
 
                     if (agent.session > 0)
                     {
-                        Murmur.User state = GetServerManager(scene).Server.getState(agent.session);
+                        User state = GetServerManager(scene).Server.getState(agent.session);
                         GetServerCallback(scene).AddUserToChan(state, agent.channel);
                     }
 
@@ -900,7 +921,7 @@ namespace Aurora.Voice.Whisper
             }
             catch (Exception e)
             {
-                m_log.ErrorFormat("[MurmurVoice] Exception: " + e.ToString());
+                m_log.ErrorFormat("[MurmurVoice] Exception: " + e);
                 return "<llsd><undef /></llsd>";
             }
         }

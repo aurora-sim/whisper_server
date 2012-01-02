@@ -5,7 +5,6 @@ using System.Text;
 using Nini.Config;
 using Aurora.Simulation.Base;
 using log4net;
-using OpenSim.Framework;
 using OpenMetaverse;
 using OpenMetaverse.StructuredData;
 

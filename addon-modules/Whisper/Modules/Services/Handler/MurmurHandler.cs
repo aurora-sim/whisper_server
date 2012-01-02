@@ -4,12 +4,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using Aurora.Framework.Servers.HttpServer;
 using log4net;
 using Nini.Config;
 using Aurora.Simulation.Base;
 using OpenSim.Services.Interfaces;
-using OpenSim.Framework;
-using OpenSim.Framework.Servers.HttpServer;
 using OpenMetaverse;
 using OpenMetaverse.StructuredData;
 using Aurora.DataManager;
@@ -86,10 +85,8 @@ namespace Aurora.Voice.Whisper
 
     public class MurmurPoster : BaseStreamHandler
     {
-        private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
-
-        private IMurmurService m_service;
-        private string m_SessionID;
+        private readonly IMurmurService m_service;
+        private readonly string m_SessionID;
         protected IRegistryCore m_registry;
 
         public MurmurPoster (string url, IMurmurService handler, string SessionID, IRegistryCore registry) :

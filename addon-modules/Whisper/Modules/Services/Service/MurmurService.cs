@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Aurora.Framework;
 using Nini.Config;
 using Aurora.Simulation.Base;
 using log4net;
-using OpenSim.Framework;
 using OpenMetaverse;
 using OpenMetaverse.StructuredData;
 
@@ -36,26 +36,28 @@ namespace Aurora.Voice.Whisper
 
         public MurmurConfig GetConfiguration(string regionName)
         {
-            MurmurConfig config = new MurmurConfig();
+            MurmurConfig config = new MurmurConfig
+                                      {
+                                          MetaIce = "Meta:" + m_config.GetString("murmur_ice", String.Empty),
+                                          MurmurHost = m_config.GetString("murmur_host", String.Empty),
+                                          ServerID = m_config.GetInt("murmur_sid", 1),
+                                          ServerVersion = m_config.GetString("server_version", String.Empty),
+                                          GlacierEnabled = m_config.GetBoolean("glacier", false),
+                                          GlacierIce = m_config.GetString("glacier_ice", String.Empty),
+                                          GlacierUser = m_config.GetString("glacier_user", "admin"),
+                                          GlacierPass = m_config.GetString("glacier_pass", "password"),
+                                          IceCB = m_config.GetString("murmur_ice_cb", "tcp -h 127.0.0.1"),
+                                          ChannelName =
+                                              m_config.GetBoolean("use_one_channel", false)
+                                                  ? m_config.GetString("channel_name", "Channel")
+                                                  : regionName
+                                      };
 
             // retrieve configuration variables
-            config.MetaIce = "Meta:" + m_config.GetString("murmur_ice", String.Empty);
-            config.MurmurHost = m_config.GetString("murmur_host", String.Empty);
-            config.ServerID = m_config.GetInt("murmur_sid", 1);
-            config.ServerVersion = m_config.GetString("server_version", String.Empty);
 
-            config.GlacierEnabled = m_config.GetBoolean("glacier", false);
 
-            config.GlacierIce = m_config.GetString("glacier_ice", String.Empty);
-            config.GlacierUser = m_config.GetString("glacier_user", "admin");
-            config.GlacierPass = m_config.GetString("glacier_pass", "password");
 
-            config.IceCB = m_config.GetString("murmur_ice_cb", "tcp -h 127.0.0.1");
 
-            if (m_config.GetBoolean("use_one_channel", false))
-                config.ChannelName = m_config.GetString("channel_name", "Channel");
-            else
-                config.ChannelName = regionName;
 
             return config;
         }
