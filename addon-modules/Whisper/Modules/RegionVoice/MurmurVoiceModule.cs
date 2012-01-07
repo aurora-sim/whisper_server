@@ -102,7 +102,9 @@ namespace Aurora.Voice.Whisper
         {
             try
             {
-                m_manager.Agent.Get(state.name).session = -1;
+                Agent agent = m_manager.Agent.Get(state.name);
+                if (agent != null)
+                    agent.session = -1;
             }
             catch (KeyNotFoundException)
             {
