@@ -811,7 +811,7 @@ namespace Aurora.Voice.Whisper
                     m_log.DebugFormat("[MurmurVoice] region \"{0}\": Parcel \"{1}\" ({2}): avatar \"{3}\": request: {4}, path: {5}, param: {6}",
                                       scene.RegionInfo.RegionName, land.Name, land.LocalID, avatar.Name, request, path, param);
 
-                    if (((land.Flags & (uint)ParcelFlags.AllowVoiceChat) > 0) && scene.RegionInfo.EstateSettings.AllowVoice)
+                    if (/*((land.Flags & (uint)ParcelFlags.AllowVoiceChat) > 0) && */scene.RegionInfo.EstateSettings.AllowVoice)
                     {
                         agent.channel = GetServerManager(scene).Channel.GetOrCreate(ChannelName(scene, land));
 
