@@ -55,6 +55,11 @@ namespace Aurora.Voice.Whisper
             get { return "MurmurServiceURI"; }
         }
 
+        public bool DoMultiplePorts
+        {
+            get { return true; }
+        }
+
         public void AddExistingUrlForClient (string SessionID, string url, uint port)
         {
             IHttpServer server = m_registry.RequestModuleInterface<ISimulationBase>().GetHttpServer(port);
