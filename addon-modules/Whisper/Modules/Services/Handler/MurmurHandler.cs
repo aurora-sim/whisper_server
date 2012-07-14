@@ -88,7 +88,7 @@ namespace Aurora.Voice.Whisper
         #endregion
     }
 
-    public class MurmurPoster : BaseStreamHandler
+    public class MurmurPoster : BaseRequestHandler
     {
         private readonly IMurmurService m_service;
         private readonly string m_SessionID;

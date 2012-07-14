@@ -37,6 +37,7 @@ using OpenSim.Region.Framework.Interfaces;
 using Murmur;
 using Glacier2;
 using UserInfo = Murmur.UserInfo;
+using System.Text;
 
 namespace Aurora.Voice.Whisper
 {
@@ -670,63 +671,26 @@ namespace Aurora.Voice.Whisper
 
             OSDMap retVal = new OSDMap();
             retVal["ProvisionVoiceAccountRequest"] = CapsUtil.CreateCAPS("ProvisionVoiceAccountRequest", m_provisionVoiceAccountRequestPath);
-#if (!ISWIN)
-            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ProvisionVoiceAccountRequest"],
-                                                       delegate(string request, string path, string param,
-                                                                OSHttpRequest httpRequest, OSHttpResponse httpResponse)
-                                                       {
-                                                           return ProvisionVoiceAccountRequest(scene, request, path, param,
-                                                                                               agentID);
-                                                       }));
-            retVal["ParcelVoiceInfoRequest"] = CapsUtil.CreateCAPS("ParcelVoiceInfoRequest", m_parcelVoiceInfoRequestPath);
-            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ParcelVoiceInfoRequest"],
-                                                       delegate(string request, string path, string param,
-                                                                OSHttpRequest httpRequest, OSHttpResponse httpResponse)
-                                                       {
-                                                           return ParcelVoiceInfoRequest(scene, request, path, param,
-                                                                                         agentID);
-                                                       }));
-            retVal["mumble_server_info"] = CapsUtil.CreateCAPS("mumble_server_info", m_chatSessionRequestPath);
-            caps.AddStreamHandler(new RestStreamHandler("GET", retVal["mumble_server_info"],
-                                                        delegate(string request, string path, string param,
-                                                                OSHttpRequest httpRequest, OSHttpResponse httpResponse)
-                                                       {
-                                                           return RestGetMumbleServerInfo(scene, request, path, param, httpRequest, httpResponse);
-                                                       }));
-#else
-            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ProvisionVoiceAccountRequest"],
-                                                        (request, path, param, httpRequest, httpResponse) =>
-                                                        ProvisionVoiceAccountRequest(scene, request, path, param,
+            caps.AddStreamHandler(new GenericStreamHandler("POST", retVal["ProvisionVoiceAccountRequest"],
+                                                        (path, request, httpRequest, httpResponse) =>
+                                                        ProvisionVoiceAccountRequest(scene, request.ReadUntilEnd(),
                                                                                      agentID)));
             retVal["ParcelVoiceInfoRequest"] = CapsUtil.CreateCAPS("ParcelVoiceInfoRequest", m_parcelVoiceInfoRequestPath);
-            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ParcelVoiceInfoRequest"],
-                                                        (request, path, param, httpRequest, httpResponse) =>
-                                                        ParcelVoiceInfoRequest(scene, request, path, param,
+            caps.AddStreamHandler(new GenericStreamHandler("POST", retVal["ParcelVoiceInfoRequest"],
+                                                        (path, request, httpRequest, httpResponse) =>
+                                                        ParcelVoiceInfoRequest(scene, request.ReadUntilEnd(),
                                                                                agentID)));
             retVal["mumble_server_info"] = CapsUtil.CreateCAPS("mumble_server_info", m_chatSessionRequestPath);
-            caps.AddStreamHandler(new RestStreamHandler("GET", retVal["mumble_server_info"],
-                                                        (request, path, param, httpRequest, httpResponse) =>
-                                                        RestGetMumbleServerInfo(scene, request, path, param, httpRequest,
-                                                                                httpResponse)));
-#endif
-            
-            /*retVal["ChatSessionRequest"] = CapsUtil.CreateCAPS("ChatSessionRequest", m_chatSessionRequestPath);
-            caps.AddStreamHandler(new RestStreamHandler("POST", retVal["ChatSessionRequest"],
-                                                       delegate(string request, string path, string param,
-                                                                OSHttpRequest httpRequest, OSHttpResponse httpResponse)
-                                                       {
-                                                           return ChatSessionRequest(scene, request, path, param,
-                                                                                     agentID);
-                                                       }));*/
-
-            //For naali
-
+            caps.AddStreamHandler(new GenericStreamHandler("GET", retVal["mumble_server_info"],
+                                                        (path, request, httpRequest, httpResponse) =>
+                                                        RestGetMumbleServerInfo(scene, request.ReadUntilEnd(),
+                                                                                httpRequest, httpResponse)));
 
             return retVal;
         }
 
         /// Callback for a client request for Voice Account Details.
-        public string ProvisionVoiceAccountRequest (IScene scene, string request, string path, string param,
+        public byte[] ProvisionVoiceAccountRequest (IScene scene, string request,
                                                    UUID agentID)
         {
             try
@@ -743,14 +707,12 @@ namespace Aurora.Voice.Whisper
                 response["voice_sip_uri_hostname"] = m_murmurd_host;
                 response["voice_account_server_name"] = String.Format("tcp://{0}:{1}", m_murmurd_host, m_murmurd_port);
 
-                string r = OSDParser.SerializeLLSDXmlString(response);
-                m_log.DebugFormat("[MurmurVoice] VoiceAccount: {0}", r);
-                return r;
+                return OSDParser.SerializeLLSDXmlBytes(response);
             }
             catch (Exception e)
             {
                 m_log.DebugFormat("[MurmurVoice] {0} failed", e);
-                return "<llsd><undef /></llsd>";
+                return MainServer.BadRequest;
             }
         }
 
@@ -764,7 +726,7 @@ namespace Aurora.Voice.Whisper
         /// <param name="httpRequest">HTTP request header object</param>
         /// <param name="httpResponse">HTTP response header object</param>
         /// <returns>Information about the mumble server in http response headers</returns>
-        public string RestGetMumbleServerInfo (IScene scene, string request, string path, string param,
+        public byte[] RestGetMumbleServerInfo(IScene scene, string request,
                                        OSHttpRequest httpRequest, OSHttpResponse httpResponse)
         {
             if (m_murmurd_host == null)
@@ -774,7 +736,7 @@ namespace Aurora.Voice.Whisper
 
                 string message = "[MUMBLE VOIP]: Server info request from " + httpRequest.RemoteIPEndPoint.Address + ". Cannot send response, module is not configured properly.";
                 m_log.Warn(message);
-                return "Mumble server info is not available.";
+                return Encoding.UTF8.GetBytes("Mumble server info is not available.");
             }
             if (httpRequest.Headers.GetValues("avatar_uuid") == null)
             {
@@ -783,7 +745,7 @@ namespace Aurora.Voice.Whisper
 
                 string message = "[MUMBLE VOIP]: Invalid server info request from " + httpRequest.RemoteIPEndPoint.Address + "";
                 m_log.Warn(message);
-                return "avatar_uuid header is missing";
+                return Encoding.UTF8.GetBytes("avatar_uuid header is missing");
             }
 
             string[] strings = httpRequest.Headers.GetValues("avatar_uuid");
@@ -808,8 +770,8 @@ namespace Aurora.Voice.Whisper
                     // voice channel
                     LandData land = scene.RequestModuleInterface<IParcelManagementModule>().GetLandObject(avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y).LandData;
 
-                    m_log.DebugFormat("[MurmurVoice] region \"{0}\": Parcel \"{1}\" ({2}): avatar \"{3}\": request: {4}, path: {5}, param: {6}",
-                                      scene.RegionInfo.RegionName, land.Name, land.LocalID, avatar.Name, request, path, param);
+                    m_log.DebugFormat("[MurmurVoice] region \"{0}\": Parcel \"{1}\" ({2}): avatar \"{3}\": request: {4}",
+                                      scene.RegionInfo.RegionName, land.Name, land.LocalID, avatar.Name, request);
 
                     if (/*((land.Flags & (uint)ParcelFlags.AllowVoiceChat) > 0) && */scene.RegionInfo.EstateSettings.AllowVoice)
                     {
@@ -858,16 +820,16 @@ namespace Aurora.Voice.Whisper
                     httpResponse.StatusDescription = "Bad Request";
 
                     m_log.Warn("[MUMBLE VOIP]: Could not parse avatar uuid from request");
-                    return "could not parse avatar_uuid header";
+                    return Encoding.UTF8.GetBytes("could not parse avatar_uuid header");
                 }
 
-                return responseBody;
+                return Encoding.UTF8.GetBytes(responseBody);
             }
-            return "Mumble server info is not available.";
+            return Encoding.UTF8.GetBytes("Mumble server info is not available.");
         }
 
         /// Callback for a client request for ParcelVoiceInfo
-        public string ParcelVoiceInfoRequest (IScene scene, string request, string path, string param,
+        public byte[] ParcelVoiceInfoRequest(IScene scene, string request,
                                              UUID agentID)
         {
             m_log.Debug("[MurmurVoice] Calling ParcelVoiceInfoRequest...");
@@ -887,8 +849,8 @@ namespace Aurora.Voice.Whisper
                 // voice channel
                 LandData land = scene.RequestModuleInterface<IParcelManagementModule>().GetLandObject(avatar.AbsolutePosition.X, avatar.AbsolutePosition.Y).LandData;
 
-                m_log.DebugFormat("[MurmurVoice] region \"{0}\": Parcel \"{1}\" ({2}): avatar \"{3}\": request: {4}, path: {5}, param: {6}",
-                                  scene.RegionInfo.RegionName, land.Name, land.LocalID, avatar.Name, request, path, param);
+                m_log.DebugFormat("[MurmurVoice] region \"{0}\": Parcel \"{1}\" ({2}): avatar \"{3}\": request: {4}",
+                                  scene.RegionInfo.RegionName, land.Name, land.LocalID, avatar.Name, request);
 
                 if (((land.Flags & (uint)ParcelFlags.AllowVoiceChat) > 0) && scene.RegionInfo.EstateSettings.AllowVoice)
                 {
@@ -916,15 +878,13 @@ namespace Aurora.Voice.Whisper
                 response["parcel_local_id"] = land.LocalID;
                 response["voice_credentials"] = new OSDMap();
                 ((OSDMap)response["voice_credentials"])["channel_uri"] = channel_uri;
-                string r = OSDParser.SerializeLLSDXmlString(response);
-                m_log.DebugFormat("[MurmurVoice] Parcel: {0}", r);
 
-                return r;
+                return OSDParser.SerializeLLSDXmlBytes(response);
             }
             catch (Exception e)
             {
                 m_log.ErrorFormat("[MurmurVoice] Exception: " + e);
-                return "<llsd><undef /></llsd>";
+                return MainServer.BadRequest;
             }
         }
 
